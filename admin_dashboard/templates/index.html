@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureFastAPI - Gestionnaire Keycloak Complet</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .hidden { display: none !important; }
+        .card { border: none; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark bg-dark mb-4 shadow-sm">
+    <div class="container">
+        <a class="navbar-brand" href="#">SecureFastAPI Keycloak Hub</a>
+        <button id="logoutBtn" class="btn btn-outline-light btn-sm hidden" onclick="logout()">Déconnexion</button>
+    </div>
+</nav>
+
+<div class="container">
+    
+    <!-- Login Section -->
+    <div id="loginSection" class="row justify-content-center mt-5">
+        <div class="col-md-5">
+            <div class="card p-4">
+                <div class="text-center mb-4">
+                    <h4>Authentification Keycloak</h4>
+                </div>
+                <div class="alert alert-danger hidden" id="loginError">Erreur de connexion.</div>
+                <form id="loginForm" onsubmit="handleLogin(event)">
+                    <div class="mb-3">
+                        <label class="form-label text-muted fw-bold">Utilisateur</label>
+                        <input type="text" id="username" class="form-control" required value="admin">
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label text-muted fw-bold">Mot de passe</label>
+                        <input type="password" id="password" class="form-control" required value="admin">
+                    </div>
+                    <button type="submit" id="loginSubmitBtn" class="btn btn-dark w-100 py-2 fw-bold">Se connecter</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard Section -->
+    <div id="dashboardSection" class="hidden">
+        
+        <!-- ROW 1 : MICROSERVICES & CLIENTS -->
+        <div class="row g-4">
+            <!-- Create Service Panel -->
+            <div class="col-md-4">
+                <div class="card p-3 h-100">
+                    <h5 class="fw-bold mb-3 text-primary">Créer un Service (Client)</h5>
+                    <form onsubmit="createService(event)">
+                        <div class="mb-2">
+                            <label class="small fw-bold">Client ID</label>
+                            <input type="text" id="newClientId" class="form-control" placeholder="ex: email-service" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="small fw-bold">Description</label>
+                            <input type="text" id="newDesc" class="form-control" placeholder="Description du service" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="small fw-bold">Root URL (Optionnel)</label>
+                            <input type="text" id="newRootUrl" class="form-control" placeholder="ex: http://localhost:8004">
+                        </div>
+                        <div class="mb-3">
+                            <label class="small fw-bold">Client Secret (Important)</label>
+                            <input type="text" id="newSecret" class="form-control" placeholder="Mot de passe M2M" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100 fw-bold">Enregistrer le Service</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- List Services Panel -->
+            <div class="col-md-8">
+                <div class="card p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0 text-dark">Services Actifs (M2M)</h5>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="loadServices()"><i class="fa-solid fa-rotate-right"></i> Rafraîchir</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Client ID</th>
+                                    <th>Statut</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="servicesTableBody">
+                                <tr><td colspan="3" class="text-center text-muted">Chargement...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <hr class="my-4">
+
+        <!-- ROW 2 : SCOPES & AUDIENCES -->
+        <div class="row g-4">
+
+            <!-- List Global Scopes Panel -->
+            <div class="col-md-12">
+                <div class="card p-3 h-100">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0 text-dark">Scopes & Audiences Globaux</h5>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="loadGlobalScopes()"><i class="fa-solid fa-rotate-right"></i> Rafraîchir</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Nom du Scope</th>
+                                    <th>Description</th>
+                                    <th>Protocole</th>
+                                </tr>
+                            </thead>
+                            <tbody id="scopesTableBody">
+                                <tr><td colspan="3" class="text-center text-muted">Chargement...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+
+    </div>
+</div>
+
+<script>
+    function show(id) { document.getElementById(id).classList.remove('hidden'); }
+    function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+    window.onload = async () => {
+        try {
+            const res = await fetch('/api/services');
+            if (res.ok) {
+                show('dashboardSection');
+                show('logoutBtn');
+                loadServices();
+                loadGlobalScopes();
+            } else {
+                show('loginSection');
+            }
+        } catch (e) {
+            show('loginSection');
+        }
+    };
+
+    async function handleLogin(e) {
+        e.preventDefault();
+        const btn = document.getElementById('loginSubmitBtn');
+        btn.disabled = true;
+        btn.innerText = "Connexion...";
+        hide('loginError');
+
+        try {
+            const fd = new FormData();
+            fd.append('username', document.getElementById('username').value);
+            fd.append('password', document.getElementById('password').value);
+
+            const res = await fetch('/api/login', { method: 'POST', body: fd });
+            if (res.ok) {
+                hide('loginSection');
+                show('dashboardSection');
+                show('logoutBtn');
+                loadServices();
+                loadGlobalScopes();
+            } else {
+                show('loginError');
+            }
+        } catch (error) {
+            show('loginError');
+        } finally {
+            btn.disabled = false;
+            btn.innerText = "Se connecter";
+        }
+    }
+
+    async function logout() {
+        await fetch('/api/logout', { method: 'POST' });
+        hide('dashboardSection');
+        hide('logoutBtn');
+        show('loginSection');
+    }
+
+    /* ==================================
+       GESTION DES SERVICES
+    ================================== */
+
+    async function loadServices() {
+        const tbody = document.getElementById('servicesTableBody');
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Chargement...</td></tr>';
+        try {
+            const res = await fetch('/api/services');
+            if (!res.ok) { if (res.status === 401) logout(); return; }
+            const services = await res.json();
+            tbody.innerHTML = '';
+            services.forEach(s => {
+                const status = s.enabled ? '<span class="badge bg-success">Actif</span>' : '<span class="badge bg-danger">Inactif</span>';
+                const actions = `
+                    <div class="btn-group btn-group-sm float-end">
+                        <button class="btn btn-outline-info" onclick="refreshSpecificService('${s.id}', '${s.clientId}')" title="Vider Cache Service"><i class="fa-solid fa-broom"></i></button>
+                        <button class="btn btn-outline-dark" onclick="toggleService('${s.id}', ${s.enabled})" title="Activer/Désactiver"><i class="fa-solid fa-power-off"></i></button>
+                        <button class="btn btn-outline-primary" onclick="addScope('${s.id}')" title="Lier un Scope à ce service"><i class="fa-solid fa-link"></i></button>
+                        <button class="btn btn-outline-warning" onclick="removeScope('${s.id}')" title="Délier un Scope"><i class="fa-solid fa-unlink"></i></button>
+                        <button class="btn btn-outline-danger" onclick="deleteService('${s.id}')" title="Supprimer le Service"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                `;
+                tbody.innerHTML += `<tr>
+                    <td><strong>${s.clientId}</strong><br><small class="text-muted">${s.description || ''}</small></td>
+                    <td>${status}</td>
+                    <td>${actions}</td>
+                </tr>`;
+            });
+        } catch (e) { tbody.innerHTML = '<tr><td colspan="3" class="text-danger">Erreur.</td></tr>'; }
+    }
+
+    async function createService(e) {
+        e.preventDefault();
+        const payload = {
+            client_id: document.getElementById('newClientId').value,
+            description: document.getElementById('newDesc').value,
+            client_secret: document.getElementById('newSecret').value,
+            root_url: document.getElementById('newRootUrl').value
+        };
+        const res = await fetch('/api/services', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (res.ok) { alert("Service créé !"); e.target.reset(); loadServices(); } else alert("Erreur.");
+    }
+
+    async function toggleService(id, currentStatus) {
+        const res = await fetch(`/api/services/${id}/toggle`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: !currentStatus }) });
+        if (res.ok) { alert("Statut mis à jour !"); loadServices(); } else alert("Erreur !");
+    }
+
+    async function addScope(id) {
+        const scope = prompt("Quel Scope Global voulez-vous lier à ce service ? (ex: products:read)");
+        if (!scope) return;
+        const res = await fetch(`/api/services/${id}/scopes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope_name: scope }) });
+        if (res.ok) alert("Scope lié !"); else alert("Erreur ou scope introuvable !");
+    }
+
+    async function removeScope(id) {
+        const scope = prompt("Nom du Scope à DELIER de ce service ?");
+        if (!scope) return;
+        const res = await fetch(`/api/services/${id}/scopes`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope_name: scope }) });
+        if (res.ok) alert("Scope délié !"); else alert("Erreur.");
+    }
+
+    async function deleteService(id) {
+        if (!confirm("DANGER: Êtes-vous absolument sûr de vouloir supprimer ce service ?")) return;
+        const res = await fetch(`/api/services/${id}`, { method: 'DELETE' });
+        if (res.ok) { alert("Service supprimé !"); loadServices(); } else alert("Erreur !");
+    }
+
+    /* ==================================
+       GESTION DES SCOPES GLOBAUX
+    ================================== */
+
+    async function loadGlobalScopes() {
+        const tbody = document.getElementById('scopesTableBody');
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Chargement...</td></tr>';
+        try {
+            const res = await fetch('/api/global-scopes');
+            if (!res.ok) return;
+            const scopes = await res.json();
+            tbody.innerHTML = '';
+            scopes.forEach(s => {
+                const desc = s.description || '-';
+                tbody.innerHTML += `<tr>
+                    <td><strong><i class="fa-solid fa-tag text-success"></i> ${s.name}</strong></td>
+                    <td>${desc}</td>
+                    <td><span class="badge bg-secondary">${s.protocol}</span></td>
+                </tr>`;
+            });
+        } catch (e) { tbody.innerHTML = '<tr><td colspan="3" class="text-danger">Erreur.</td></tr>'; }
+    }
+
+    async function createGlobalScope(e) {
+        e.preventDefault();
+        const payload = {
+            name: document.getElementById('newScopeName').value,
+            description: document.getElementById('newScopeDesc').value,
+            audience: document.getElementById('newScopeAudience').value
+        };
+        const res = await fetch('/api/global-scopes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        if (res.ok) { alert("Scope (et Audience) créés avec succès !"); e.target.reset(); loadGlobalScopes(); } 
+        else alert("Erreur.");
+    }
+
+    
+
+    async function refreshSpecificService(id, clientId) {
+        if (!confirm(`Voulez-vous vraiment vider le cache du service ${clientId} ?`)) return;
+        try {
+            const res = await fetch(`/api/services/${id}/refresh`, { method: 'POST' });
+            if (res.ok) {
+                alert(`Cache vidé avec succès pour ${clientId} !`);
+            } else {
+                const err = await res.json();
+                alert(`Erreur : ${err.detail}`);
+            }
+        } catch (e) {
+            alert("Erreur de connexion.");
+        }
+    }
+</script>
+</body>
+</html>

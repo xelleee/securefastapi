@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  user-service:
+    build: 
+      context: .
+      dockerfile: dockerfile_user
+    container_name: service-user
+    command: uvicorn main:app --host 0.0.0.0 --port 8001
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    networks:
+      - experio-net
+
+  product-service:
+    build: 
+      context: .
+      dockerfile: dockerfile_product
+    container_name: service-product
+    command: uvicorn main:app --host 0.0.0.0 --port 8002
+    ports:
+      - "8002:8002"
+    env_file:
+      - .env
+    networks:
+      - experio-net
+
+  order-service:
+    build: 
+      context: .
+      dockerfile: dockerfile_order
+    container_name: service-order
+    command: uvicorn main:app --host 0.0.0.0 --port 8003
+    ports:
+      - "8003:8003"
+    env_file:
+      - .env
+    networks:
+      - experio-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - experio-net
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - experio-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    networks:
+      - experio-net
+
+networks:
+  experio-net:
+    driver: bridge

@@ -1,0 +1,16 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Libs externes — changent rarement, toujours en cache
+RUN pip install --no-cache-dir fastapi uvicorn httpx PyJWT pydantic \
+    python-dotenv cryptography \
+    prometheus-fastapi-instrumentator python-logging-loki
+
+# SDK — invalidé seulement si le WHL change
+COPY securefastapi-1.0.0-py3-none-any.whl /app/
+RUN pip install --no-cache-dir /app/securefastapi-1.0.0-py3-none-any.whl
+
+# Code du service — rebuild rapide
+COPY product_service /app/
+COPY .env /app/
