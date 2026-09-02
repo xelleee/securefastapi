@@ -1,0 +1,9 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Libs externes — changent rarement, toujours en cache
+RUN pip install --no-cache-dir fastapi uvicorn httpx pydantic python-multipart
+
+# Code du service — rebuild rapide
+COPY admin_dashboard /app/
