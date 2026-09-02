@@ -12,5 +12,5 @@ COPY securefastapi-1.0.0-py3-none-any.whl /app/
 RUN pip install --no-cache-dir /app/securefastapi-1.0.0-py3-none-any.whl
 
 # Code du service — rebuild rapide
-COPY product_service /app/
+COPY apps/product_service /app/
 COPY .env /app/

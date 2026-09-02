@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
@@ -23,7 +23,7 @@
 
 <div class="container">
     
-    <!-- Login Section -->
+    <!-- Login View -->
     <div id="loginSection" class="row justify-content-center mt-5">
         <div class="col-md-5">
             <div class="card p-4">
@@ -46,12 +46,12 @@
         </div>
     </div>
 
-    <!-- Dashboard Section -->
+    <!-- Main Dashboard View -->
     <div id="dashboardSection" class="hidden">
         
-        <!-- ROW 1 : MICROSERVICES & CLIENTS -->
+        <!-- Services Overview Row -->
         <div class="row g-4">
-            <!-- Create Service Panel -->
+            <!-- Service Creation Form -->
             <div class="col-md-4">
                 <div class="card p-3 h-100">
                     <h5 class="fw-bold mb-3 text-primary">Créer un Service (Client)</h5>
@@ -77,7 +77,7 @@
                 </div>
             </div>
 
-            <!-- List Services Panel -->
+            <!-- Services Table -->
             <div class="col-md-8">
                 <div class="card p-3 h-100">
                     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -104,10 +104,10 @@
 
         <hr class="my-4">
 
-        <!-- ROW 2 : SCOPES & AUDIENCES -->
+        <!-- Scopes Overview Row -->
         <div class="row g-4">
 
-            <!-- List Global Scopes Panel -->
+            <!-- Scopes Table -->
             <div class="col-md-12">
                 <div class="card p-3 h-100">
                     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -136,7 +136,59 @@
     </div>
 </div>
 
+<!-- Custom Modal for Scopes -->
+<div id="scopeModal" class="modal" tabindex="-1" style="background: rgba(0,0,0,0.5);">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="scopeModalTitle">Action Scope</h5>
+        <button type="button" class="btn-close" onclick="hideScopeModal()"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label">Choisissez un Scope :</label>
+        <select id="scopeSelect" class="form-select"></select>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="hideScopeModal()">Annuler</button>
+        <button type="button" class="btn btn-primary" id="scopeModalConfirm">Confirmer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
+    let currentScopes = [];
+    let scopeActionState = { id: null, action: null };
+
+    function showScopeModal(id, action) {
+        scopeActionState = { id, action };
+        document.getElementById('scopeModalTitle').innerText = action === 'add' ? 'Lier un Scope' : 'Délier un Scope';
+        const select = document.getElementById('scopeSelect');
+        if (currentScopes.length === 0) {
+            select.innerHTML = '<option disabled>Aucun scope disponible</option>';
+        } else {
+            select.innerHTML = currentScopes.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+        }
+        document.getElementById('scopeModal').style.display = 'block';
+    }
+
+    function hideScopeModal() {
+        document.getElementById('scopeModal').style.display = 'none';
+    }
+
+    document.getElementById('scopeModalConfirm').addEventListener('click', async () => {
+        const scope = document.getElementById('scopeSelect').value;
+        const id = scopeActionState.id;
+        const action = scopeActionState.action;
+        if (!scope || !id) return;
+        
+        hideScopeModal();
+        const method = action === 'add' ? 'POST' : 'DELETE';
+        const res = await fetch(`/api/services/${id}/scopes`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope_name: scope }) });
+        if (res.ok) alert(`Scope ${action === 'add' ? 'lié' : 'délié'} avec succès !`);
+        else alert("Erreur.");
+    });
+
     function show(id) { document.getElementById(id).classList.remove('hidden'); }
     function hide(id) { document.getElementById(id).classList.add('hidden'); }
 
@@ -193,9 +245,7 @@
         show('loginSection');
     }
 
-    /* ==================================
-       GESTION DES SERVICES
-    ================================== */
+    /* --- Services Management --- */
 
     async function loadServices() {
         const tbody = document.getElementById('servicesTableBody');
@@ -242,19 +292,8 @@
         if (res.ok) { alert("Statut mis à jour !"); loadServices(); } else alert("Erreur !");
     }
 
-    async function addScope(id) {
-        const scope = prompt("Quel Scope Global voulez-vous lier à ce service ? (ex: products:read)");
-        if (!scope) return;
-        const res = await fetch(`/api/services/${id}/scopes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope_name: scope }) });
-        if (res.ok) alert("Scope lié !"); else alert("Erreur ou scope introuvable !");
-    }
-
-    async function removeScope(id) {
-        const scope = prompt("Nom du Scope à DELIER de ce service ?");
-        if (!scope) return;
-        const res = await fetch(`/api/services/${id}/scopes`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope_name: scope }) });
-        if (res.ok) alert("Scope délié !"); else alert("Erreur.");
-    }
+    function addScope(id) { showScopeModal(id, 'add'); }
+    function removeScope(id) { showScopeModal(id, 'remove'); }
 
     async function deleteService(id) {
         if (!confirm("DANGER: Êtes-vous absolument sûr de vouloir supprimer ce service ?")) return;
@@ -262,9 +301,7 @@
         if (res.ok) { alert("Service supprimé !"); loadServices(); } else alert("Erreur !");
     }
 
-    /* ==================================
-       GESTION DES SCOPES GLOBAUX
-    ================================== */
+    /* --- Scopes Management --- */
 
     async function loadGlobalScopes() {
         const tbody = document.getElementById('scopesTableBody');
@@ -273,31 +310,23 @@
             const res = await fetch('/api/global-scopes');
             if (!res.ok) return;
             const scopes = await res.json();
+            currentScopes = scopes;
             tbody.innerHTML = '';
             scopes.forEach(s => {
                 const desc = s.description || '-';
                 tbody.innerHTML += `<tr>
                     <td><strong><i class="fa-solid fa-tag text-success"></i> ${s.name}</strong></td>
                     <td>${desc}</td>
-                    <td><span class="badge bg-secondary">${s.protocol}</span></td>
+                    <td>
+                        <span class="badge bg-secondary me-2">${s.protocol}</span>
+                        <button class="btn btn-sm btn-outline-danger float-end" onclick="deleteGlobalScope('${s.id}', '${s.name}')" title="Supprimer ce scope">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </td>
                 </tr>`;
             });
         } catch (e) { tbody.innerHTML = '<tr><td colspan="3" class="text-danger">Erreur.</td></tr>'; }
     }
-
-    async function createGlobalScope(e) {
-        e.preventDefault();
-        const payload = {
-            name: document.getElementById('newScopeName').value,
-            description: document.getElementById('newScopeDesc').value,
-            audience: document.getElementById('newScopeAudience').value
-        };
-        const res = await fetch('/api/global-scopes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (res.ok) { alert("Scope (et Audience) créés avec succès !"); e.target.reset(); loadGlobalScopes(); } 
-        else alert("Erreur.");
-    }
-
-    
 
     async function refreshSpecificService(id, clientId) {
         if (!confirm(`Voulez-vous vraiment vider le cache du service ${clientId} ?`)) return;
@@ -311,6 +340,18 @@
             }
         } catch (e) {
             alert("Erreur de connexion.");
+        }
+    }
+
+    async function deleteGlobalScope(id, name) {
+        if (!confirm(`DANGER: Êtes-vous sûr de vouloir supprimer le scope '${name}' ?
+Ceci impactera tous les services liés !`)) return;
+        const res = await fetch(`/api/global-scopes/${id}`, { method: 'DELETE' });
+        if (res.ok) { 
+            alert("Scope supprimé !"); 
+            loadGlobalScopes(); 
+        } else { 
+            alert("Erreur lors de la suppression !"); 
         }
     }
 </script>

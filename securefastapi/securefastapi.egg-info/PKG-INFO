@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: securefastapi
+Version: 1.0.0
+Summary: securisation des microservices
+Author: experio
+Requires-Python: >=3.10
+Requires-Dist: fastapi
+Requires-Dist: uvicorn
+Requires-Dist: httpx
+Requires-Dist: PyJWT
+Requires-Dist: pydantic
+Dynamic: author
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary

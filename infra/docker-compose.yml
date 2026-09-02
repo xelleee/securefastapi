@@ -1,42 +1,28 @@
-version: '3.8'
+﻿version: '3.8'
 
 services:
-  user-service:
-    build: 
-      context: .
-      dockerfile: dockerfile_user
-    container_name: service-user
-    command: uvicorn main:app --host 0.0.0.0 --port 8001
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: keycloak
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+    command: start-dev
     ports:
-      - "8001:8001"
-    env_file:
-      - .env
+      - "8080:8080"
     networks:
       - experio-net
-
-  product-service:
-    build: 
+  
+  admin-dashboard:
+    build:
       context: .
-      dockerfile: dockerfile_product
-    container_name: service-product
-    command: uvicorn main:app --host 0.0.0.0 --port 8002
+      dockerfile: dockerfile_admin
+    container_name: admin-dashboard
+    command: uvicorn main:app --host 0.0.0.0 --port 8004
     ports:
-      - "8002:8002"
+      - "8004:8004"
     env_file:
-      - .env
-    networks:
-      - experio-net
-
-  order-service:
-    build: 
-      context: .
-      dockerfile: dockerfile_order
-    container_name: service-order
-    command: uvicorn main:app --host 0.0.0.0 --port 8003
-    ports:
-      - "8003:8003"
-    env_file:
-      - .env
+      - ../.env
     networks:
       - experio-net
 
@@ -68,9 +54,12 @@ services:
       - "3000:3000"
     volumes:
       - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - ./grafana-dashboards-provider.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - ./grafana-dashboards:/var/lib/grafana/dashboards
     networks:
       - experio-net
 
 networks:
   experio-net:
+    name: experio-net
     driver: bridge

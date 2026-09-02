@@ -23,7 +23,7 @@ async def serve_ui():
         html = f.read()
     return HTMLResponse(content=html, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
-# 1. AUTHENTIFICATION & SÉCURITÉ
+# AUTHENTICATION & SECURITY
 # ==========================================
 
 async def get_admin_token(request: Request) -> str:
@@ -40,7 +40,7 @@ async def login(response: Response, username: str = Form(...), password: str = F
     with open('login_attempts.log', 'a') as logf:
         logf.write(f"Login attempt: {username}\n")
 
-    """Authentifie l'admin et crée une session (cookie)."""
+    """Authenticate administrator and set session cookie."""
     async with httpx.AsyncClient() as client:
         res = await client.post(f"{KEYCLOAK_URL}/realms/{ADMIN_REALM}/protocol/openid-connect/token", data={
             "client_id": "admin-cli",
@@ -62,19 +62,20 @@ async def logout(response: Response):
     return {"message": "Déconnecté"}
 
 # ==========================================
-# 2. GESTION DES SERVICES (CLIENTS)
+# SERVICES MANAGEMENT (M2M CLIENTS)
 # ==========================================
 
 @app.get("/api/services")
 async def list_services(token: str = Depends(get_admin_token)):
-    """Liste tous les services (clients)."""
+    """List all active backend microservices."""
     async with httpx.AsyncClient() as client:
         res = await client.get(
             f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/clients",
             headers={"Authorization": f"Bearer {token}"}
         )
-        # Filtrer pour ne garder que les clients backend (pas les trucs par défaut de Keycloak)
-        clients = [c for c in res.json() if not c["clientId"].startswith("account") and c["clientId"] != "broker"]
+        # Ignore Keycloak default internal clients
+        default_clients = ["account", "account-console", "admin-cli", "broker", "realm-management", "security-admin-console", "master-realm"]
+        clients = [c for c in res.json() if c["clientId"] not in default_clients and not c["clientId"].startswith("system")]
         return clients
 
 class ServiceCreateRequest(BaseModel):
@@ -85,7 +86,7 @@ class ServiceCreateRequest(BaseModel):
 
 @app.post("/api/services")
 async def create_service(req: ServiceCreateRequest, token: str = Depends(get_admin_token)):
-    """Crée un nouveau microservice (Client M2M)."""
+    """Register a new M2M microservice client in Keycloak."""
     payload = {
         "clientId": req.client_id,
         "description": req.description,
@@ -112,30 +113,51 @@ async def create_service(req: ServiceCreateRequest, token: str = Depends(get_adm
         scope_name = req.client_id
         print(f"[AUTO-SCOPE] Service créé: {req.client_id} (uuid={client_uuid}). Création du scope '{scope_name}'...")
         
-        # 1. Vérifier si le scope existe déjà
+        # Check if scope already exists
         scopes_res = await client.get(f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/client-scopes", headers={"Authorization": f"Bearer {token}"})
         if scopes_res.status_code == 200:
             scopes = scopes_res.json()
             scope_uuid = next((s["id"] for s in scopes if s["name"] == scope_name), None)
             
-            # 2. S'il n'existe pas, on le crée
+            # Create scope if it does not exist
             if not scope_uuid:
-                print(f"[AUTO-SCOPE] Scope '{scope_name}' n'existe pas, création en cours...")
+                print(f"[AUTO-SCOPE] Creating missing scope: {scope_name}")
                 create_scope_res = await client.post(
                     f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/client-scopes",
                     json={"name": scope_name, "protocol": "openid-connect"},
                     headers={"Authorization": f"Bearer {token}"}
                 )
-                print(f"[AUTO-SCOPE] Création scope status: {create_scope_res.status_code}")
+                print(f"[AUTO-SCOPE] Scope creation status: {create_scope_res.status_code}")
                 if create_scope_res.status_code == 201:
                     scope_uuid = create_scope_res.headers["Location"].split("/")[-1]
-                    print(f"[AUTO-SCOPE] Scope créé avec uuid={scope_uuid}")
+                    print(f"[AUTO-SCOPE] Scope created successfully. UUID: {scope_uuid}")
+                    
+                    # Add Audience Mapper to the newly created scope
+                    mapper_payload = {
+                        "name": f"audience-mapping-{req.client_id}",
+                        "protocol": "openid-connect",
+                        "protocolMapper": "oidc-audience-mapper",
+                        "config": {
+                            "included.client.audience": req.client_id,
+                            "id.token.claim": "false",
+                            "access.token.claim": "true"
+                        }
+                    }
+                    res_mapper = await client.post(
+                        f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/client-scopes/{scope_uuid}/protocol-mappers/models",
+                        json=mapper_payload,
+                        headers={"Authorization": f"Bearer {token}"}
+                    )
+                    if res_mapper.status_code == 201:
+                        print(f"[AUTO-SCOPE] Audience mapper added for {req.client_id}")
+                    else:
+                        print(f"[AUTO-SCOPE] Error adding audience mapper: {res_mapper.text}")
                 else:
-                    print(f"[AUTO-SCOPE] ERREUR création scope: {create_scope_res.text}")
+                    print(f"[AUTO-SCOPE] Error creating scope: {create_scope_res.text}")
             else:
-                print(f"[AUTO-SCOPE] Scope '{scope_name}' existe déjà (uuid={scope_uuid})")
+                print(f"[AUTO-SCOPE] Scope already exists. UUID: {scope_uuid}")
             
-            # 3. Assigner le scope au service qu'on vient de créer
+            # Link the scope to the created service client
             if scope_uuid:
                 scope_data_res = await client.get(f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/client-scopes/{scope_uuid}", headers={"Authorization": f"Bearer {token}"})
                 if scope_data_res.status_code == 200:
@@ -156,7 +178,7 @@ class ToggleRequest(BaseModel):
 
 @app.put("/api/services/{client_uuid}/toggle")
 async def toggle_service(client_uuid: str, req: ToggleRequest, token: str = Depends(get_admin_token)):
-    """Active ou dǸsactive un service."""
+    """Toggle the enabled status of a microservice."""
     async with httpx.AsyncClient() as client:
         res = await client.put(
             f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/clients/{client_uuid}",
@@ -167,7 +189,7 @@ async def toggle_service(client_uuid: str, req: ToggleRequest, token: str = Depe
 
 @app.delete("/api/services/{client_uuid}")
 async def delete_service(client_uuid: str, token: str = Depends(get_admin_token)):
-    """Supprime un service."""
+    """Permanently delete a microservice client."""
     async with httpx.AsyncClient() as client:
         await client.delete(
             f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/clients/{client_uuid}",
@@ -176,7 +198,7 @@ async def delete_service(client_uuid: str, token: str = Depends(get_admin_token)
         return {"message": "Service supprimé"}
 
 # ==========================================
-# 3. GESTION DES ACCÈS (SCOPES)
+# ACCESS & SCOPES MANAGEMENT
 # ==========================================
 
 class ScopeActionRequest(BaseModel):
@@ -184,9 +206,9 @@ class ScopeActionRequest(BaseModel):
 
 @app.post("/api/services/{client_uuid}/scopes")
 async def add_scope(client_uuid: str, req: ScopeActionRequest, token: str = Depends(get_admin_token)):
-    """Ajoute un scope  un service."""
+    """Attach a client scope to a microservice."""
     async with httpx.AsyncClient() as client:
-        # 1. Vérifier si le scope global existe, sinon le créer
+        # Retrieve scope ID by name or create it if missing
         scopes_res = await client.get(f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/client-scopes", headers={"Authorization": f"Bearer {token}"})
         scopes = scopes_res.json()
         
@@ -200,11 +222,11 @@ async def add_scope(client_uuid: str, req: ScopeActionRequest, token: str = Depe
             )
             scope_uuid = create_res.headers["Location"].split("/")[-1]
             
-        # 2. Obtenir le modèle de données du scope
+        # Fetch scope payload required for linking
         scope_data_res = await client.get(f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/client-scopes/{scope_uuid}", headers={"Authorization": f"Bearer {token}"})
         scope_data = scope_data_res.json()
 
-        # 3. Assigner au client
+        # Link scope to client
         await client.put(
             f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/clients/{client_uuid}/default-client-scopes/{scope_uuid}",
             json=scope_data,
@@ -214,9 +236,9 @@ async def add_scope(client_uuid: str, req: ScopeActionRequest, token: str = Depe
 
 @app.delete("/api/services/{client_uuid}/scopes")
 async def remove_scope(client_uuid: str, req: ScopeActionRequest, token: str = Depends(get_admin_token)):
-    """Retire un scope d'un service."""
+    """Detach a client scope from a microservice."""
     async with httpx.AsyncClient() as client:
-        # 1. Obtenir l'UUID du scope
+        # Retrieve scope ID by name
         scopes_res = await client.get(f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/client-scopes", headers={"Authorization": f"Bearer {token}"})
         scopes = scopes_res.json()
         
@@ -233,20 +255,21 @@ async def remove_scope(client_uuid: str, req: ScopeActionRequest, token: str = D
 
 
 # ==========================================
-# 4. GESTION GLOBALE DES SCOPES & AUDIENCES
+# GLOBAL SCOPES & AUDIENCES
 # ==========================================
 
 @app.get("/api/global-scopes")
 async def list_global_scopes(token: str = Depends(get_admin_token)):
-    """Liste tous les scopes de niveau Realm (hors scopes par dǸfaut)."""
+    """List all custom global client scopes in the realm."""
     async with httpx.AsyncClient() as client:
         res = await client.get(
             f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/client-scopes",
             headers={"Authorization": f"Bearer {token}"}
         )
         scopes = res.json()
-        # Filtrer quelques scopes internes de keycloak pour plus de clartǸ
-        return [s for s in scopes if not s["name"].startswith("web-origins") and s["name"] not in ["acr", "roles", "profile", "email", "address", "phone", "microprofile-jwt", "offline_access"]]
+        # Ignore Keycloak default internal scopes
+        default_scopes = ["acr", "roles", "profile", "email", "address", "phone", "microprofile-jwt", "offline_access", "role_list", "organization", "web-origins", "saml_organization", "basic", "AuthnContextClassRef", "service_account"]
+        return [s for s in scopes if not s["name"].startswith("web-origins") and s["name"] not in default_scopes]
 
 class GlobalScopeCreateRequest(BaseModel):
     name: str
@@ -255,9 +278,9 @@ class GlobalScopeCreateRequest(BaseModel):
 
 @app.post("/api/global-scopes")
 async def create_global_scope(req: GlobalScopeCreateRequest, token: str = Depends(get_admin_token)):
-    """CrǸe un Client Scope global et y attache optionnellement une Audience."""
+    """Create a global client scope and optional audience mapper."""
     async with httpx.AsyncClient() as client:
-        # 1. CrǸer le Scope
+        # Create the Client Scope
         scope_payload = {
             "name": req.name,
             "description": req.description,
@@ -271,10 +294,10 @@ async def create_global_scope(req: GlobalScopeCreateRequest, token: str = Depend
         if res.status_code != 201:
             raise HTTPException(status_code=res.status_code, detail="Erreur lors de la crǸation du scope.")
             
-        # 2. RǸcupǸrer l'ID du nouveau scope depuis le Header Location
+        # Extract scope ID from response Location header
         scope_uuid = res.headers["Location"].split("/")[-1]
         
-        # 3. Si une audience est fournie, ajouter le Mapper d'Audience
+        # Add Audience Mapper if audience claim is provided
         if req.audience:
             mapper_payload = {
                 "name": f"audience-mapping-{req.audience}",
@@ -296,15 +319,29 @@ async def create_global_scope(req: GlobalScopeCreateRequest, token: str = Depend
                 
         return {"message": "Scope et Audience crǸǸs avec succs !"}
 
+
+@app.delete("/api/global-scopes/{scope_uuid}")
+async def delete_global_scope(scope_uuid: str, token: str = Depends(get_admin_token)):
+    """Permanently delete a global client scope."""
+    async with httpx.AsyncClient() as client:
+        res = await client.delete(
+            f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/client-scopes/{scope_uuid}",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        if res.status_code == 204:
+            return {"message": "Scope supprimé"}
+        else:
+            raise HTTPException(status_code=res.status_code, detail="Erreur lors de la suppression.")
+
 # ==========================================
-# 5. REFRESH CACHE D'UN MICROSERVICE
+# SERVICE CACHE MANAGEMENT
 # ==========================================
 
 @app.post("/api/services/{client_uuid}/refresh")
 async def refresh_service_cache(client_uuid: str, token: str = Depends(get_admin_token)):
-    """Vide le cache d'un service spécifique en utilisant son rootUrl défini dans Keycloak."""
+    """Trigger cache refresh on a specific microservice via its Root URL."""
     async with httpx.AsyncClient() as client:
-        # 1. Obtenir les détails du client depuis Keycloak
+        # Fetch client configuration to extract Root URL
         client_res = await client.get(
             f"{KEYCLOAK_URL}/admin/realms/{REALM_NAME}/clients/{client_uuid}",
             headers={"Authorization": f"Bearer {token}"}
@@ -318,7 +355,7 @@ async def refresh_service_cache(client_uuid: str, token: str = Depends(get_admin
         if not root_url:
             raise HTTPException(status_code=400, detail="Ce service n'a pas de Root URL configuré. Impossible de vider son cache.")
             
-        # 2. Contacter le service
+        # Send clear-cache request to the service via Root URL
         try:
             res = await client.post(f"{root_url.rstrip('/')}/refresh", timeout=3.0)
             if res.status_code == 200:
