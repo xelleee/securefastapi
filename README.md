@@ -36,26 +36,30 @@ Service-to-service calls require Machine-to-Machine (Client Credentials) tokens.
 
 ---
 
-## 1. Infrastructure Management (Admin Dashboard)
+## 1. Keycloak Core Concepts & Admin Dashboard
 
-Managing Keycloak manually (creating clients, generating secrets, configuring scopes and audiences) can be tedious and error-prone. **To solve this, we provide a centralized Admin Dashboard.**
+To secure communication between microservices, Keycloak relies on three main concepts you need to understand:
+* **Client (Client ID):** The unique identity of your microservice (e.g., `payment-service`).
+* **Client Secret:** The password your microservice uses to authenticate itself to Keycloak.
+* **Client Scopes:** The specific permissions granted to the service (e.g., `orders:read`). This dictates which other microservices it is allowed to call.
 
-The Admin Dashboard acts as the control center for your microservices' identity and access management. It provides a clean, visual interface to fully automate Keycloak configurations.
+### The Admin Dashboard (Automated Management)
+Normally, setting this up requires manually navigating Keycloak to create clients, generate secrets, configure scopes, and map audiences. 
 
-### What You Can Do
-* **Register Microservices:** Create new M2M clients (e.g., `payment-service`) and retrieve their `CLIENT_SECRET` in one click.
-* **Automated Provisioning:** Global scopes and OIDC audience mappers are instantly generated and configured the moment a service is created.
-* **Manage Permissions (Scopes):** Visually link or unlink scopes using a dropdown interface to control exactly which APIs a service is allowed to consume.
+To make this painless, we built a centralized **Admin Dashboard**. It fully automates Keycloak configurations behind a clean interface.
+
+**What you can do:**
+* **1-Click Provisioning:** Register a new microservice identity and immediately get its `CLIENT_SECRET`.
+* **Auto-Scoping:** Global scopes and OIDC audience mappers are instantly generated in the background.
+* **Visual Permissions:** Link or unlink scopes to a service using a dropdown to manage its M2M permissions.
 * **State Management:** Toggle microservices on or off (enable/disable) in real-time.
-* **Cache Management:** Trigger a remote cache refresh on a specific microservice to invalidate its in-memory JWKS and tokens immediately, without waiting for the standard TTL to expire.
+* **Cache Management:** Trigger a remote cache refresh on a specific microservice to immediately invalidate its in-memory JWKS and tokens.
 
 ### How to Use It
 1. Ensure Keycloak is running.
 2. Open the Admin Dashboard and log in using your Keycloak `admin` credentials.
 3. Provision your new service via the interface.
 4. Copy the generated **Client Secret** and add it to your microservice's `.env` file.
-
-*(Note: Manual configuration is still possible via the Keycloak UI, but the Admin Dashboard guarantees standard compliance with our SDK's scope and audience expectations).*
 
 ---
 
