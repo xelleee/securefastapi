@@ -30,7 +30,7 @@ correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", defaul
 
 
 class JSONFormatter(logging.Formatter):
-    """Formate chaque log en JSON structuré pour Loki / tout système de monitoring."""
+    """Formats log records as structured JSON for Loki or other monitoring systems."""
 
     _RESERVED = {
         "name",
@@ -81,7 +81,7 @@ class JSONFormatter(logging.Formatter):
 
 
 def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
-    """Crée un logger JSON. Si LOKI_URL est défini dans l'environnement, envoie les logs à Loki automatiquement."""
+    """Creates a JSON logger. Automatically forwards logs to Loki if LOKI_URL is configured."""
     import os
 
     logger = logging.getLogger(name)
@@ -102,7 +102,7 @@ def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
             logging_loki.emitter.LokiEmitter.level_tag = "level"
             service_tag = name.replace("secure_fastapi.", "")
 
-            # LokiQueueHandler envoie les logs dans un thread séparé → zéro impact sur la latence
+            # LokiQueueHandler sends logs in a separate thread for zero latency impact.
             loki_handler = logging_loki.LokiQueueHandler(
                 Queue(-1),
                 url=loki_url.rstrip("/") + "/loki/api/v1/push",
@@ -120,7 +120,7 @@ def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
 
 
 class CorrelationIdMiddleware(BaseHTTPMiddleware):
-    """Attache un X-Request-ID à chaque requête pour tracer son parcours entre les services."""
+    """Injects X-Request-ID into every request to trace correlation across microservices."""
 
     HEADER_NAME = "X-Request-ID"
 
@@ -137,7 +137,7 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
 
 
 class AuditLogMiddleware(BaseHTTPMiddleware):
-    """Log automatiquement chaque requête HTTP avec sa durée et son statut."""
+    """Automatically logs each HTTP request duration and status."""
 
     def __init__(self, app, service_name: str, logger: logging.Logger):
         super().__init__(app)
@@ -207,7 +207,7 @@ class SecureFastAPI(FastAPI):
         *args,
         **kwargs,
     ):
-        """Configure la connexion Keycloak, initialise les caches et ajoute les middlewares."""
+        """Configures Keycloak connection, initializes caches, and registers middlewares."""
         kwargs.setdefault("lifespan", self._build_lifespan())
         super().__init__(*args, **kwargs)
 
@@ -228,7 +228,7 @@ class SecureFastAPI(FastAPI):
 
         self._jwks_dict_cache: dict[str, Any] = {}
         self._jwks_cache_loaded_at: float = 0.0
-        # Les locks sont créés ici pour être disponibles dès le démarrage.
+        # Locks must be initialized here to be available immediately.
         self._jwks_lock = asyncio.Lock()
         self._token_lock = asyncio.Lock()
         self._revocation_lock = asyncio.Lock()
@@ -236,7 +236,7 @@ class SecureFastAPI(FastAPI):
         self._service_token: str | None = None
         self._service_token_expires_at: float = 0.0
 
-        # Cache de révocation : whitelist (tokens valides) et blacklist (tokens révoqués)
+        # Revocation cache: whitelist for valid tokens, blacklist for revoked ones.
         self._whitelist_cache: dict[str, float] = {}
         self._blacklist_cache: dict[str, float] = {}
         self._last_cache_cleanup: float = 0.0
@@ -267,7 +267,7 @@ class SecureFastAPI(FastAPI):
         self._setup_prometheus()
 
     def _setup_prometheus(self) -> None:
-        """Active /metrics pour Prometheus si la lib est installée."""
+        """Exposes /metrics endpoint for Prometheus scraping."""
         try:
             from prometheus_fastapi_instrumentator import Instrumentator
 
@@ -280,11 +280,11 @@ class SecureFastAPI(FastAPI):
             pass
 
     def _build_lifespan(self):
-        """Gère le démarrage (init clients HTTP, préchauffage JWKS et token) et l'arrêt propre du service."""
+        """Manages application lifecycle: initializes HTTP clients, pre-warms JWKS, and handles graceful shutdown."""
 
         @asynccontextmanager
         async def lifespan(app: FastAPI):
-            # Les locks sont déjà créés dans __init__, on init uniquement les clients HTTP ici.
+            # Locks are already created in __init__; only HTTP clients are initialized here.
             self._http_client = httpx.AsyncClient(timeout=self.DEFAULT_HTTP_TIMEOUT)
             self.client = SecureHttpClient(api=self, timeout=self.DEFAULT_HTTP_TIMEOUT)
 
@@ -340,7 +340,7 @@ class SecureFastAPI(FastAPI):
         return lifespan
 
     def _setup_health_endpoints(self) -> None:
-        """Ajoute les routes /health, /ready et /refresh au service."""
+        """Injects /health, /ready, and /refresh utility endpoints."""
 
         @self.get("/health", include_in_schema=False)
         async def health():
@@ -376,14 +376,14 @@ class SecureFastAPI(FastAPI):
 
         @self.post("/refresh", include_in_schema=False)
         async def refresh_cache():
-            """Vide le cache de révocation. À appeler après un changement de permissions dans Keycloak."""
+            """Clears revocation caches. Call this endpoint after updating permissions in Keycloak."""
             async with self._revocation_lock:
                 cleared = len(self._whitelist_cache) + len(self._blacklist_cache)
                 self._whitelist_cache.clear()
                 self._blacklist_cache.clear()
 
-            # On supprime aussi le token M2M du service pour forcer Keycloak à en générer un nouveau
-            # qui contiendra les nouveaux scopes / permissions
+            # Delete the M2M token to force a regeneration containing the new scopes.
+            # This ensures outbound requests use updated permissions immediately.
             async with self._token_lock:
                 self._service_token = None
                 self._service_token_expires_at = 0
@@ -400,13 +400,13 @@ class SecureFastAPI(FastAPI):
 
     @property
     def _is_jwks_cache_expired(self) -> bool:
-        """Retourne True si le cache JWKS a dépassé son TTL."""
+        """Returns True if the JWKS cache has expired."""
         if self._jwks_cache_loaded_at == 0:
             return True
         return (time.time() - self._jwks_cache_loaded_at) > self.jwks_cache_ttl
 
     async def _refresh_jwks(self) -> None:
-        """Récupère les clés publiques JWKS depuis Keycloak et les met en cache."""
+        """Fetches and caches JWKS public keys from Keycloak."""
         async with self._jwks_lock:
             if not self._is_jwks_cache_expired:
                 return
@@ -443,13 +443,13 @@ class SecureFastAPI(FastAPI):
                 raise
 
     async def sign_token(self) -> str:
-        """Retourne le token M2M du service (Client Credentials). Renouvelé automatiquement avant expiration."""
-        # Token encore valide, pas besoin d'appeler Keycloak
+        """Returns the M2M Client Credentials token. Automatically renews it before expiration."""
+        # Token is still valid; skip Keycloak request.
         if self._service_token and time.time() < (self._service_token_expires_at - 30):
             return self._service_token
 
         async with self._token_lock:
-            # Vérification après le lock : une autre coroutine a peut-être déjà renouvelé le token.
+            # Double-check after acquiring lock: another coroutine might have already renewed the token.
             now = time.time()
             if self._service_token and now < (self._service_token_expires_at - 30):
                 return self._service_token
@@ -499,14 +499,14 @@ class SecureFastAPI(FastAPI):
         self, token: str, background_tasks: Any | None = None
     ) -> bool:
         """
-        Vérifie si le token est révoqué via le cache (0ms) ou Keycloak en arrière-plan.
-        Pattern Stale-While-Revalidate : on répond depuis le cache et on revalide en parallèle.
+        Verify if the token revoked by cache or Keycloak background .
+        Pattern Stale-While-Revalidate : Respond by  cache and Revalidate the token.
         """
         if not self.introspection_enabled:
             return True
         now = time.time()
 
-        # Lecture du cache sous lock (opération < 1µs)
+        # Read cache under lock (takes < 1ms).
         async with self._revocation_lock:
             if now - self._last_cache_cleanup > 300:
                 self._whitelist_cache = {
@@ -522,13 +522,13 @@ class SecureFastAPI(FastAPI):
 
             wl_exp = self._whitelist_cache.get(token)
             in_whitelist = bool(wl_exp and wl_exp > now)
-        # Lock libéré ici — les appels réseau se font toujours hors du lock
+        # Lock released here - network calls should always happen outside the lock.
 
-        # Token en blacklist : on re-vérifie synchronement au cas où il aurait été ré-activé
+        # Blacklisted token: re-verify synchronously in case it was reactivated.
         if in_blacklist:
             return await self._sync_introspect(token, now)
 
-        # Token en whitelist : on autorise et on revalide en arrière-plan
+        # Whitelisted token: authorize immediately and re-validate in background.
         if in_whitelist:
             if background_tasks:
                 background_tasks.add_task(self._background_introspect, token)
@@ -536,15 +536,15 @@ class SecureFastAPI(FastAPI):
                 asyncio.create_task(self._background_introspect(token))
             return True
 
-        # Premier appel de ce token : vérification synchrone obligatoire
+        # First time seeing this token: synchronous verification required.
         return await self._sync_introspect(token, now)
 
     async def _background_introspect(self, token: str) -> None:
-        """Revalide le token auprès de Keycloak en arrière-plan sans bloquer la réponse."""
-        # Évite les appels Keycloak dupliqués si plusieurs requêtes arrivent en même temps
+        """Revalidates token with Keycloak in the background without blocking the HTTP response."""
+        # Prevents duplicate Keycloak calls if multiple requests arrive simultaneously.
         async with self._revocation_lock:
             if token in self._pending_revalidations:
-                return  # Une autre coroutine vérifie déjà ce token
+                return  # Another coroutine is already verifying this token.
             self._pending_revalidations.add(token)
         try:
             userinfo_url = (
@@ -559,13 +559,13 @@ class SecureFastAPI(FastAPI):
             now = time.time()
             async with self._revocation_lock:
                 if response.status_code == 200:
-                    # Token actif -> whitelist
+                    # Token active -> cache to whitelist.
                     self._blacklist_cache.pop(token, None)
                     self._whitelist_cache[token] = (
                         now + self.DEFAULT_INTROSPECTION_CACHE_TTL
                     )
                 else:
-                    # Token révoqué -> blacklist
+                    # Token revoked -> cache to blacklist.
                     self._whitelist_cache.pop(token, None)
                     self._blacklist_cache[token] = (
                         now + self.DEFAULT_BLACKLIST_CACHE_TTL
@@ -575,13 +575,13 @@ class SecureFastAPI(FastAPI):
                         extra={"event": "token_revoked_realtime"},
                     )
         except Exception:
-            pass  # Échec silencieux : ne pas impacter la requête en cours
+            pass  # Silent failure: do not impact the ongoing request.
         finally:
             async with self._revocation_lock:
                 self._pending_revalidations.discard(token)
 
     async def _sync_introspect(self, token: str, now: float) -> bool:
-        """Vérifie le token auprès de Keycloak de façon synchrone (cache miss ou token en blacklist)."""
+        """Verifies the token synchronously with Keycloak (used for cache miss or blacklist)."""
         userinfo_url = (
             f"{self.keycloak_url}/realms/{self.realm}/protocol/openid-connect/userinfo"
         )
@@ -610,7 +610,7 @@ class SecureFastAPI(FastAPI):
                 "revocation_check_error",
                 extra={"event": "revocation_check_error", "error": str(e)},
             )
-            # En cas d'erreur réseau, on refuse l'accès par sécurité
+            # Reject access on network error for security.
             return False
 
 
@@ -620,18 +620,18 @@ class SecureFastAPI(FastAPI):
         token: str,
         background_tasks: Any | None = None,
     ) -> dict[str, Any]:
-        """Valide la signature, l'expiration et la révocation du JWT. Retourne le payload si valide."""
+        """Validates JWT signature, expiration, and revocation status. Returns payload if valid."""
         try:
             unverified_header = jwt.get_unverified_header(token)
         except DecodeError as e:
             self.logger.warning(
                 "jwt_decode_error", extra={"event": "jwt_decode_error", "error": str(e)}
             )
-            raise HTTPException(status_code=401, detail="Token invalide")
+            raise HTTPException(status_code=401, detail="Invalid Token")
 
         kid = unverified_header.get("kid")
         if not kid:
-            raise HTTPException(status_code=401, detail="Token invalide")
+            raise HTTPException(status_code=401, detail="Invalid Token")
 
         if self._is_jwks_cache_expired or kid not in self._jwks_dict_cache:
             await self._refresh_jwks()
@@ -640,7 +640,7 @@ class SecureFastAPI(FastAPI):
             self.logger.warning(
                 "jwks_kid_not_found", extra={"event": "jwks_kid_not_found", "kid": kid}
             )
-            raise HTTPException(status_code=401, detail="Token invalide")
+            raise HTTPException(status_code=401, detail="Invalid Token")
 
         public_key = jwt.PyJWK(self._jwks_dict_cache[kid]).key
 
@@ -665,7 +665,7 @@ class SecureFastAPI(FastAPI):
 
         except ExpiredSignatureError:
             self.logger.warning("jwt_expired", extra={"event": "jwt_expired"})
-            raise HTTPException(status_code=401, detail="Token invalide")
+            raise HTTPException(status_code=401, detail="Invalid Token")
 
         except InvalidSignatureError:
             self.logger.critical(
@@ -676,45 +676,45 @@ class SecureFastAPI(FastAPI):
                     "kid": kid,
                 },
             )
-            raise HTTPException(status_code=401, detail="Token invalide")
+            raise HTTPException(status_code=401, detail="Invalid Token")
 
         except InvalidAudienceError:
             self.logger.warning(
                 "jwt_invalid_audience",
                 extra={"event": "jwt_invalid_audience", "expected": self.audience},
             )
-            raise HTTPException(status_code=401, detail="Token invalide")
+            raise HTTPException(status_code=401, detail="Invalid Token")
 
         except InvalidIssuerError:
             self.logger.warning(
                 "jwt_invalid_issuer",
                 extra={"event": "jwt_invalid_issuer", "expected": self.expected_issuer},
             )
-            raise HTTPException(status_code=401, detail="Token invalide")
+            raise HTTPException(status_code=401, detail="Invalid Token")
 
         except InvalidTokenError as e:
             self.logger.warning(
                 "jwt_invalid", extra={"event": "jwt_invalid", "error": str(e)}
             )
-            raise HTTPException(status_code=401, detail="Token invalide")
+            raise HTTPException(status_code=401, detail="Invalid Token")
 
         if not await self._check_revocation(token, background_tasks=background_tasks):
             self.logger.warning(
                 "token_revoked", extra={"event": "token_revoked", "kid": kid}
             )
-            raise HTTPException(status_code=401, detail="Microservice désactivé")
+            raise HTTPException(status_code=401, detail="Microservice Disabled")
 
         return payload
 
     def verify_request(self):
-        """Dépendance FastAPI à injecter dans les routes protégées. Valide le JWT et retourne son payload."""
+        """FastAPI dependency for protected routes. Validates JWT and extracts payload."""
 
         async def dependency(request: Request, background_tasks: BackgroundTasks):
             auth_header = request.headers.get("Authorization", "")
             if not auth_header.startswith("Bearer "):
                 raise HTTPException(
                     status_code=401,
-                    detail="Non authentifié : Token manquant (M2M requis)",
+                    detail="Unauthorized: Missing Token (M2M Required)",
                 )
             token = auth_header[len("Bearer ") :]
             return await self.verify_token(
@@ -726,16 +726,16 @@ class SecureFastAPI(FastAPI):
 
 
 class SecureHttpClient(httpx.AsyncClient):
-    """Client HTTP qui injecte automatiquement le token M2M et le X-Request-ID dans chaque requête."""
+    """HTTP Client that auto-injects M2M token and X-Request-ID into outbound requests."""
 
     def __init__(self, api: SecureFastAPI, **kwargs):
-        """Lie le client à l'instance SecureFastAPI pour récupérer les tokens M2M."""
+        """Binds the client to the SecureFastAPI instance to retrieve M2M tokens."""
         super().__init__(**kwargs)
         self.api = api
         self.logger = setup_logger(f"secure_http_client.{api.service_name}")
 
     async def request(self, method, url, **kwargs):
-        """Injecte le token M2M et le correlation ID avant chaque requête HTTP."""
+        """Injects M2M token and correlation ID before making HTTP requests."""
         token = await self.api.sign_token()
         headers = kwargs.pop("headers", None) or {}
         headers["Authorization"] = f"Bearer {token}"
